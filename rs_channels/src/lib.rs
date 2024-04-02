@@ -1,9 +1,18 @@
 use std::sync::{Arc, Condvar, Mutex};
 use std::collections::VecDeque;
 
+
 pub struct Sender<T> {
     inner: Arc<Inner<T>>,
 }
+
+impl<T> Clone for Sender<T> {
+    fn clone(&self) -> Self {
+        Sender {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+} 
 
 pub struct Receiver<T> {
     inner: Arc<Inner<T>>,
@@ -20,13 +29,13 @@ impl<T> Sender<T> {
 }
 
 impl<T> Receiver<T> {
-    pub fn receive(&mut self) -> T {
+    pub fn recv(&mut self) -> T {
         let mut queue = self.inner.queue.lock().unwrap();
         loop {
             match queue.pop_front() {
                 Some(t) => return t, 
-                None => {
-                    self.inner.available.wait(queue).unwrap();
+                None => { 
+                    queue = self.inner.available.wait(queue).unwrap();
                 }
             }
         }
@@ -42,6 +51,7 @@ struct Inner<T> {
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     let inner = Inner {
         queue: Mutex::default(),
+        available: Condvar::new(),
     };
 
     let inner = Arc::new(inner);
@@ -53,4 +63,17 @@ pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
             inner: inner.clone()
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ping_ping() {
+        let (mut tx, mut rx) = channel();
+        tx.send(42);
+        assert_eq!(rx.recv(), 42);
+    }
+
 }
